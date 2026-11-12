@@ -19,25 +19,46 @@ def get_product_info(page, url):
 
 
 def job():
-    with sync_playwright() as p:
-        conn = init_db()
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+    try:
+        with sync_playwright() as p:
+            conn = init_db()
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
 
-        info = get_product_info(page, url)
-        last_price = get_last_price(conn, url)
-        print("Dernier prix connu:", last_price)
+            try:
+                # Tentative de scraping du titre et du prix
+                info = get_product_info(page, url)
+            except Exception as e:
+                # Le scraping a echoue (page changee, produit indisponible, etc.)
+                print(f"Erreur pendant le scraping: {e}")
+                send_telegram_alert(f"Le scraper a echoue: {e}")
+                return
+            finally:
+                # Le navigateur doit se fermer meme en cas d'erreur
+                browser.close()
 
-        if last_price is not None and info["price"] < last_price:
-            message = f" Baisse de prix !\n{info['title']}\n{last_price}€ → {info['price']}€\n{url}"
-            print(message)
-            send_telegram_alert(message)
+            # Recupere le dernier prix connu pour ce produit
+            last_price = get_last_price(conn, url)
+            print("Dernier prix connu:", last_price)
 
-        insert_price(conn, info["title"], url, info["price"])
-        print(info)
+            # Compare avec le nouveau prix scrape
+            if last_price is not None and info["price"] < last_price:
+                message = f"Baisse de prix !\n{info['title']}\n{last_price}e -> {info['price']}e\n{url}"
+                print(message)
+                try:
+                    # Envoi de l'alerte Telegram
+                    send_telegram_alert(message)
+                except Exception as e:
+                    # Un probleme Telegram ne doit pas bloquer l'enregistrement du prix
+                    print(f"Erreur lors de l'envoi Telegram: {e}")
 
-        browser.close()
+            # Enregistre le nouveau prix dans l'historique
+            insert_price(conn, info["title"], url, info["price"])
+            print(info)
 
+    except Exception as e:
+        # Filet de securite final pour toute erreur imprevue
+        print(f"Erreur critique dans job(): {e}")
 
 if __name__ == "__main__":
     job()
