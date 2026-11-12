@@ -1,5 +1,6 @@
 from playwright.sync_api import sync_playwright
 from db import init_db, insert_price, get_last_price
+from alert import send_telegram_alert
 
 url = "https://www.amazon.fr/dp/B0DCVMN51Z"
 
@@ -28,7 +29,9 @@ def job():
         print("Dernier prix connu:", last_price)
 
         if last_price is not None and info["price"] < last_price:
-            print(f" Baisse de prix ! {last_price}€ → {info['price']}€")
+            message = f" Baisse de prix !\n{info['title']}\n{last_price}€ → {info['price']}€\n{url}"
+            print(message)
+            send_telegram_alert(message)
 
         insert_price(conn, info["title"], url, info["price"])
         print(info)
